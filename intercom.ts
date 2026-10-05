@@ -48,7 +48,12 @@ function createIntercomVideoProxy(device: RingIntercom): RingCamera {
   define('restClient', (device as any).restClient)
   define('isRingEdgeEnabled', false)
   define('hasBattery', device.batteryLevel !== null)
-  define('isOffline', device.isOffline)
+  // Read through to the device so offline/online changes after startup are seen
+  Object.defineProperty(proxy, 'isOffline', {
+    get: () => device.isOffline,
+    configurable: true,
+    enumerable: true,
+  })
   define('snapshotsAreBlocked', false)
   define('hasSnapshotWithinLifetime', false)
   define('snapshotLifeTime', 55000) // camera stays active ~1 min after a ring
@@ -268,13 +273,15 @@ export class Intercom extends BaseDataAccessory<RingIntercom> {
           logInfo(`Unlocking ${device.name}`)
           this.unlocking = true
 
-          const response = await device.unlock().catch((e) => {
+          try {
+            const response = await device.unlock()
+            logInfo(`Unlock response: ${JSON.stringify(response)}`)
+            markAsUnlocked()
+          } catch (e) {
             logError(e)
             this.unlocking = false
-          })
-          logInfo(`Unlock response: ${JSON.stringify(response)}`)
-
-          markAsUnlocked()
+            syncLockState()
+          }
         } else {
           // If the user locks the door from the home app, we can't do anything but set the states back to "locked"
           this.unlocking = false
